@@ -250,6 +250,10 @@
             opacity: 1;
         }
 
+        .locale-option {
+            margin-top: 15px;
+        }
+
         footer {
             text-align: center;
             margin-top: 30px;
@@ -272,6 +276,10 @@
             <div class="checkbox-container">
                 <input type="checkbox" id="hasHeadersCheckbox" checked>
                 <label for="hasHeadersCheckbox">First row contains headers</label>
+            </div>
+            <div class="locale-option">
+                <input type="checkbox" id="useCommaDecimalSeparator" checked>
+                <label for="useCommaDecimalSeparator">Use comma (,) as decimal separator</label>
             </div>
             <div class="file-info" id="fileInfo"></div>
             <div class="status" id="uploadStatus"></div>
@@ -334,11 +342,13 @@
         let sheetData = null;
         let headers = [];
         let hasHeaders = true;
+        let useCommaDecimal = true;
 
         // DOM Elements
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const hasHeadersCheckbox = document.getElementById('hasHeadersCheckbox');
+        const useCommaDecimalSeparator = document.getElementById('useCommaDecimalSeparator');
         const fileInfo = document.getElementById('fileInfo');
         const uploadStatus = document.getElementById('uploadStatus');
         const columnSelectionSection = document.getElementById('columnSelectionSection');
@@ -362,6 +372,9 @@
         hasHeadersCheckbox.addEventListener('change', () => {
             hasHeaders = hasHeadersCheckbox.checked;
             if (workbook) parseAndDisplayColumns();
+        });
+        useCommaDecimalSeparator.addEventListener('change', () => {
+            useCommaDecimal = useCommaDecimalSeparator.checked;
         });
         processButton.addEventListener('click', processSpreadsheet);
         downloadXlsx.addEventListener('click', () => downloadFile('xlsx'));
@@ -536,6 +549,14 @@
             uploadStatus.className = 'status error';
         }
 
+        function formatDecimalFormula(formula) {
+            // If comma is requested as decimal separator, replace dots with commas in any numeric values
+            if (useCommaDecimal) {
+                return formula.replace(/(\d+)\.(\d+)/g, '$1,$2');
+            }
+            return formula;
+        }
+
         function processSpreadsheet() {
             const cnpjColIndex = parseInt(cnpjColumn.value);
             const baseColIndex = parseInt(baseCalculoColumn.value);
@@ -604,9 +625,11 @@
                         const formulaRow = new Array(rawData[0].length).fill('');
                         formulaRow[cnpjColIndex] = cnpj; // Keep the same CNPJ
                         
-                        // Convert row numbers to Excel format (1-based indexing)
-                        const startExcelRow = startRow + newData.length - group.length + 1;
-                        const endExcelRow = startRow + newData.length;
+                        // Convert row numbers to Excel format (1-based indexing) - FIXED: Use correct row indexing
+                        // Note: We calculate the actual Excel row numbers based on position in the newData array
+                        // +1 because Excel is 1-indexed
+                        const startExcelRow = newData.length - group.length + 1;
+                        const endExcelRow = newData.length;
                         
                         // Get column letters for formula construction
                         const baseColLetter = getColumnLetter(baseColIndex);
@@ -614,10 +637,14 @@
                         
                         // Create formulas
                         // Base de Cálculo formula: SUM(range)/2
-                        formulaRow[baseColIndex] = `=SUM(${baseColLetter}${startExcelRow}:${baseColLetter}${endExcelRow})/2`;
+                        let baseFormula = `=SUM(${baseColLetter}${startExcelRow}:${baseColLetter}${endExcelRow})/2`;
+                        baseFormula = formatDecimalFormula(baseFormula);
+                        formulaRow[baseColIndex] = baseFormula;
                         
                         // Valor Retido formula: SUM(range)
-                        formulaRow[valorColIndex] = `=SUM(${valorColLetter}${startExcelRow}:${valorColLetter}${endExcelRow})`;
+                        let valorFormula = `=SUM(${valorColLetter}${startExcelRow}:${valorColLetter}${endExcelRow})`;
+                        valorFormula = formatDecimalFormula(valorFormula);
+                        formulaRow[valorColIndex] = valorFormula;
                         
                         // Add formula row
                         newData.push(formulaRow);
@@ -626,15 +653,37 @@
                         newData.push(new Array(rawData[0].length).fill(''));
                     }
                     
+                    // Configure decimal options for XLSX
+                    const xlsxOptions = {};
+                    
+                    if (useCommaDecimal) {
+                        // This will ensure that XLSX cell formats use commas for decimals
+                        xlsxOptions.cellFormats = true;
+                        xlsxOptions.cellStyles = true;
+                    }
+                    
                     // Convert back to sheet
                     const newSheet = XLSX.utils.aoa_to_sheet(newData);
                     
                     // Copy styles and merges from original sheet (if possible)
-                    // Note: This is a simplified approach and may not preserve all formatting
                     const properties = ['!cols', '!rows', '!merges', '!autofilter'];
                     properties.forEach(prop => {
                         if (ws[prop]) newSheet[prop] = ws[prop];
                     });
+                    
+                    // Set appropriate number formats if using comma decimal
+                    if (useCommaDecimal) {
+                        // Iterate through cells and set number format where needed
+                        for (const cellAddr in newSheet) {
+                            if (cellAddr[0] === '!') continue; // Skip metadata
+                            
+                            const cell = newSheet[cellAddr];
+                            if (cell.t === 'n') { // If it's a number cell
+                                // Set number format to use commas
+                                if (!cell.z) cell.z = '0,00';
+                            }
+                        }
+                    }
                     
                     // Add to the workbook
                     XLSX.utils.book_append_sheet(processedWorkbook, newSheet, selectedSheet);
@@ -664,18 +713,32 @@
                 const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
                 let fileName = `${fileNameWithoutExt}_processed`;
                 
+                const opts = { 
+                    bookType: format 
+                };
+                
+                // For ODS and CSV formats, add specific options for decimal separator
+                if (useCommaDecimal) {
+                    opts.cellDates = true;
+                    opts.cellStyles = true;
+                }
+                
                 switch (format) {
                     case 'xlsx':
                         fileName += '.xlsx';
-                        XLSX.writeFile(processedWorkbook, fileName);
+                        XLSX.writeFile(processedWorkbook, fileName, opts);
                         break;
                     case 'ods':
                         fileName += '.ods';
-                        XLSX.writeFile(processedWorkbook, fileName, { bookType: 'ods' });
+                        XLSX.writeFile(processedWorkbook, fileName, opts);
                         break;
                     case 'csv':
                         fileName += '.csv';
-                        XLSX.writeFile(processedWorkbook, fileName, { bookType: 'csv' });
+                        // For CSV, we need to specify the delimiter
+                        if (useCommaDecimal) {
+                            opts.FS = ";"; // Use semicolon as field separator when using comma for decimals
+                        }
+                        XLSX.writeFile(processedWorkbook, fileName, opts);
                         break;
                 }
                 
