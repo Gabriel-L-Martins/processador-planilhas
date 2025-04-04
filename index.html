@@ -316,14 +316,6 @@
                     <select id="valorRetidoColumn"></select>
                 </div>
             </div>
-            
-            <div class="options-container">
-                <div class="options-title">Advanced Options</div>
-                <div class="checkbox-container">
-                    <input type="checkbox" id="useCommaDecimalCheckbox" checked>
-                    <label for="useCommaDecimalCheckbox">Use comma as decimal separator</label>
-                </div>
-            </div>
         </div>
         
         <div class="section hidden" id="processSection">
@@ -353,13 +345,11 @@
         let sheetData = null;
         let headers = [];
         let hasHeaders = true;
-        let useCommaDecimal = true;
 
         // DOM Elements
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const hasHeadersCheckbox = document.getElementById('hasHeadersCheckbox');
-        const useCommaDecimalCheckbox = document.getElementById('useCommaDecimalCheckbox');
         const fileInfo = document.getElementById('fileInfo');
         const uploadStatus = document.getElementById('uploadStatus');
         const columnSelectionSection = document.getElementById('columnSelectionSection');
@@ -383,9 +373,6 @@
         hasHeadersCheckbox.addEventListener('change', () => {
             hasHeaders = hasHeadersCheckbox.checked;
             if (workbook) parseAndDisplayColumns();
-        });
-        useCommaDecimalCheckbox.addEventListener('change', () => {
-            useCommaDecimal = useCommaDecimalCheckbox.checked;
         });
         processButton.addEventListener('click', processSpreadsheet);
         downloadXlsx.addEventListener('click', () => downloadFile('xlsx'));
@@ -560,6 +547,22 @@
             uploadStatus.className = 'status error';
         }
 
+        // Function to format numbers with comma as decimal separator
+        function formatNumberWithComma(num) {
+            if (typeof num !== 'number') return num;
+            return num.toString().replace('.', ',');
+        }
+
+        // Function to apply number format to a specific cell
+        function applyNumberFormat(cell) {
+            if (cell && typeof cell.v === 'number') {
+                cell.z = '#,##0.00'; // Set number format
+                // Convert to string with comma
+                cell.w = formatNumberWithComma(cell.v.toFixed(2));
+            }
+            return cell;
+        }
+
         function processSpreadsheet() {
             const cnpjColIndex = parseInt(cnpjColumn.value);
             const baseColIndex = parseInt(baseCalculoColumn.value);
@@ -580,6 +583,13 @@
                 try {
                     // Create a copy of the workbook for processing
                     processedWorkbook = XLSX.utils.book_new();
+
+                    // Setup workbook for proper locale settings
+                    processedWorkbook.Workbook = {
+                        Views: [{RTL: false}],
+                        Locale: 'pt-BR' // Brazilian Portuguese locale for comma decimal separator
+                    };
+                    
                     const ws = workbook.Sheets[selectedSheet];
                     
                     // Convert to raw data with formulas
@@ -638,10 +648,7 @@
                         const baseColLetter = getColumnLetter(baseColIndex);
                         const valorColLetter = getColumnLetter(valorColIndex);
                         
-                        // Set decimal separator based on user preference
-                        const decimalSeparator = useCommaDecimal ? ',' : '.';
-                        
-                        // Create formulas with the correct decimal separator
+                        // Create formulas with proper format
                         // Base de Cálculo formula: SUM(range)/2
                         formulaRow[baseColIndex] = `=SUM(${baseColLetter}${startExcelRow}:${baseColLetter}${endExcelRow})/2`;
                         
@@ -664,29 +671,29 @@
                         if (ws[prop]) newSheet[prop] = ws[prop];
                     });
                     
-                    // Set number format for the sheet to use comma as decimal separator if needed
-                    if (useCommaDecimal) {
-                        // Apply a comma decimal separator format to columns
+                    // Apply numFmt to ensure numbers use comma as decimal separator
+                    if (newSheet['!ref']) {
                         const range = XLSX.utils.decode_range(newSheet['!ref']);
                         for (let C = range.s.c; C <= range.e.c; C++) {
                             for (let R = range.s.r; R <= range.e.r; R++) {
                                 const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
-                                const cell = newSheet[cellAddress];
-                                if (cell && typeof cell.v === 'number') {
-                                    if (!cell.z) cell.z = '#.##0,00'; // Set comma as decimal separator
+                                if (newSheet[cellAddress]) {
+                                    newSheet[cellAddress] = applyNumberFormat(newSheet[cellAddress]);
                                 }
                             }
                         }
                     }
+
+                    // Set default number format for sheet
+                    newSheet['!numFmts'] = [
+                        {
+                            numFmtId: 164,
+                            formatCode: '#,##0.00'
+                        }
+                    ];
                     
-                    // Add to the workbook
+                    // Add to the workbook with proper locale settings
                     XLSX.utils.book_append_sheet(processedWorkbook, newSheet, selectedSheet);
-                    
-                    // Set global number format to use comma as decimal separator if needed
-                    if (useCommaDecimal) {
-                        if (!processedWorkbook.Workbook) processedWorkbook.Workbook = {};
-                        if (!processedWorkbook.Workbook.Locale) processedWorkbook.Workbook.Locale = 'pt-BR'; // Brazilian Portuguese uses comma
-                    }
                     
                     processButton.disabled = false;
                     processButton.innerHTML = 'Process Spreadsheet';
@@ -713,38 +720,44 @@
                 const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
                 let fileName = `${fileNameWithoutExt}_processed`;
                 
-                const options = { 
-                    bookType: format
+                // Configure options to handle comma decimal separator for different formats
+                const options = {
+                    bookType: format,
+                    cellDates: true
                 };
                 
-                // Configure number format options
-                if (useCommaDecimal) {
-                    options.cellDates = true;
-                    if (format === 'xlsx' || format === 'ods') {
-                        // Set decimal separator preference
-                        if (!processedWorkbook.Workbook) processedWorkbook.Workbook = {};
-                        if (!processedWorkbook.Workbook.Locale) processedWorkbook.Workbook.Locale = 'pt-BR';
-                    }
-                }
-                
+                // Apply special handling for each format
                 switch (format) {
                     case 'xlsx':
                         fileName += '.xlsx';
-                        XLSX.writeFile(processedWorkbook, fileName, options);
+                        options.cellNF = true;
+                        options.bookSST = false;
+                        options.type = 'binary';
                         break;
                     case 'ods':
                         fileName += '.ods';
-                        XLSX.writeFile(processedWorkbook, fileName, options);
+                        options.cellNF = true;
+                        options.type = 'binary';
                         break;
                     case 'csv':
                         fileName += '.csv';
-                        // For CSV, we need to handle the comma decimal separately
-                        if (useCommaDecimal) {
-                            options.FS = ";"; // Use semicolon as field separator for CSV
-                        }
-                        XLSX.writeFile(processedWorkbook, fileName, options);
+                        options.FS = ";"; // Use semicolon as field separator for CSV
+                        options.dateNF = 'dd/mm/yyyy';
+                        options.strip = false;
+                        options.blankrows = true;
                         break;
                 }
+                
+                // Create a workbook with the right settings for comma as decimal separator
+                if (!processedWorkbook.Workbook) {
+                    processedWorkbook.Workbook = {};
+                }
+                
+                // Set the appropriate locale for comma decimal separator
+                processedWorkbook.Workbook.Locale = 'pt-BR';
+                
+                // Write with the specified options
+                XLSX.writeFile(processedWorkbook, fileName, options);
                 
                 processStatus.textContent = `File downloaded as ${fileName}`;
                 processStatus.className = 'status success';
@@ -753,6 +766,19 @@
                 showError('Error downloading file. Please try again.');
             }
         }
+
+        // Apply initial number format settings to workbook
+        function applyInitialSettings() {
+            if (!XLSX.SSF) return;
+            
+            // Register a custom number format that forces comma as decimal separator
+            XLSX.SSF.load_table({
+                164: '#,##0.00'
+            });
+        }
+        
+        // Call this when the page loads
+        applyInitialSettings();
     </script>
 </body>
 </html>
