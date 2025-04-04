@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spreadsheet Processor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4a6fa5;
+            --secondary-color: #166088;
+            --accent-color: #4fc3f7;
+            --light-bg: #f5f7fa;
+            --dark-text: #333;
+            --light-text: #fff;
+            --error-color: #f44336;
+            --success-color: #4caf50;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--light-bg);
+            color: var(--dark-text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .section {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .section:last-child {
+            border-bottom: none;
+        }
+
+        h2 {
+            color: var(--secondary-color);
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent-color);
+            background-color: rgba(79, 195, 247, 0.05);
+        }
+
+        .upload-area.active {
+            border-color: var(--accent-color);
+            background-color: rgba(79, 195, 247, 0.1);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin-top: 15px;
+        }
+
+        .checkbox-container input {
+            margin-right: 8px;
+        }
+
+        .column-selection {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .column-selection {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .column-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        select, button {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background-color: white;
+            font-size: 14px;
+        }
+
+        select {
+            width: 100%;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: var(--light-text);
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        button:hover {
+            background-color: var(--secondary-color);
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .process-button {
+            grid-column: span 3;
+            padding: 12px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            display: none;
+        }
+
+        .status.error {
+            background-color: rgba(244, 67, 54, 0.1);
+            color: var(--error-color);
+            display: block;
+        }
+
+        .status.success {
+            background-color: rgba(76, 175, 80, 0.1);
+            color: var(--success-color);
+            display: block;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            margin-left: 5px;
+            width: 16px;
+            height: 16px;
+            background-color: #ccc;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 16px;
+            font-size: 12px;
+            cursor: help;
+        }
+
+        .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            padding: 5px;
+            border-radius: 6px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-weight: normal;
+            font-size: 12px;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Spreadsheet Processor</h1>
+        
+        <div class="section">
+            <h2>Upload Spreadsheet</h2>
+            <div class="upload-area" id="uploadArea">
+                <p>Drag & drop your spreadsheet file here or click to browse</p>
+                <p>(Supported formats: XLSX, ODS, CSV)</p>
+                <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls,.ods,.csv">
+            </div>
+            <div class="checkbox-container">
+                <input type="checkbox" id="hasHeadersCheckbox" checked>
+                <label for="hasHeadersCheckbox">First row contains headers</label>
+            </div>
+            <div class="file-info" id="fileInfo"></div>
+            <div class="status" id="uploadStatus"></div>
+        </div>
+        
+        <div class="section hidden" id="columnSelectionSection">
+            <h2>Select Columns for Processing</h2>
+            <div class="column-selection">
+                <div class="column-group">
+                    <label for="cnpjColumn">CNPJ Column 
+                        <span class="tooltip">?
+                            <span class="tooltip-text">Select the column containing CNPJ identifiers</span>
+                        </span>
+                    </label>
+                    <select id="cnpjColumn"></select>
+                </div>
+                <div class="column-group">
+                    <label for="baseCalculoColumn">Base de Cálculo Column
+                        <span class="tooltip">?
+                            <span class="tooltip-text">Select the column containing Base de Cálculo values</span>
+                        </span>
+                    </label>
+                    <select id="baseCalculoColumn"></select>
+                </div>
+                <div class="column-group">
+                    <label for="valorRetidoColumn">Valor Retido Column
+                        <span class="tooltip">?
+                            <span class="tooltip-text">Select the column containing Valor Retido values</span>
+                        </span>
+                    </label>
+                    <select id="valorRetidoColumn"></select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section hidden" id="processSection">
+            <h2>Process & Download</h2>
+            <button id="processButton" class="process-button">
+                Process Spreadsheet
+            </button>
+            <div class="status" id="processStatus"></div>
+            
+            <div class="button-group hidden" id="downloadButtons">
+                <button id="downloadXlsx">Download as XLSX</button>
+                <button id="downloadOds">Download as ODS</button>
+                <button id="downloadCsv">Download as CSV</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        All processing happens in your browser. Your files are never uploaded to any server.
+    </footer>
+
+    <script>
+        // Global variables
+        let workbook = null;
+        let processedWorkbook = null;
+        let selectedSheet = null;
+        let sheetData = null;
+        let headers = [];
+        let hasHeaders = true;
+
+        // DOM Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const hasHeadersCheckbox = document.getElementById('hasHeadersCheckbox');
+        const fileInfo = document.getElementById('fileInfo');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const columnSelectionSection = document.getElementById('columnSelectionSection');
+        const cnpjColumn = document.getElementById('cnpjColumn');
+        const baseCalculoColumn = document.getElementById('baseCalculoColumn');
+        const valorRetidoColumn = document.getElementById('valorRetidoColumn');
+        const processSection = document.getElementById('processSection');
+        const processButton = document.getElementById('processButton');
+        const processStatus = document.getElementById('processStatus');
+        const downloadButtons = document.getElementById('downloadButtons');
+        const downloadXlsx = document.getElementById('downloadXlsx');
+        const downloadOds = document.getElementById('downloadOds');
+        const downloadCsv = document.getElementById('downloadCsv');
+
+        // Event Listeners
+        uploadArea.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadArea.addEventListener('dragover', handleDragOver);
+        uploadArea.addEventListener('dragleave', handleDragLeave);
+        uploadArea.addEventListener('drop', handleFileDrop);
+        hasHeadersCheckbox.addEventListener('change', () => {
+            hasHeaders = hasHeadersCheckbox.checked;
+            if (workbook) parseAndDisplayColumns();
+        });
+        processButton.addEventListener('click', processSpreadsheet);
+        downloadXlsx.addEventListener('click', () => downloadFile('xlsx'));
+        downloadOds.addEventListener('click', () => downloadFile('ods'));
+        downloadCsv.addEventListener('click', () => downloadFile('csv'));
+
+        // File Upload Handlers
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadArea.classList.add('active');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('active');
+        }
+
+        function handleFileDrop(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('active');
+            
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                fileInput.files = files;
+                handleFileSelect();
+            }
+        }
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const validExtensions = ['.xlsx', '.xls', '.ods', '.csv'];
+            const fileName = file.name.toLowerCase();
+            const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
+            
+            if (!validExtensions.includes(fileExtension)) {
+                showError('Invalid file type. Please upload an XLSX, ODS, or CSV file.');
+                return;
+            }
+
+            uploadStatus.textContent = 'Loading file...';
+            uploadStatus.className = 'status';
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Default to first sheet
+                    selectedSheet = workbook.SheetNames[0];
+                    
+                    fileInfo.textContent = `File: ${file.name} | Sheet: ${selectedSheet}`;
+                    
+                    parseAndDisplayColumns();
+                    
+                    uploadStatus.textContent = 'File loaded successfully!';
+                    uploadStatus.className = 'status success';
+                    
+                    columnSelectionSection.classList.remove('hidden');
+                    processSection.classList.remove('hidden');
+                    downloadButtons.classList.add('hidden');
+                } catch (error) {
+                    console.error(error);
+                    showError('Error loading file. Please try again.');
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('Error reading file. Please try again.');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        function parseAndDisplayColumns() {
+            sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[selectedSheet], { 
+                header: 1,
+                defval: '' 
+            });
+            
+            if (sheetData.length === 0) {
+                showError('The spreadsheet is empty.');
+                return;
+            }
+            
+            // Get headers (first row or generated A, B, C, etc.)
+            headers = [];
+            const firstRow = sheetData[0];
+            
+            if (hasHeaders && sheetData.length > 1) {
+                headers = firstRow;
+            } else {
+                // Generate column names (A, B, C, etc.)
+                for (let i = 0; i < firstRow.length; i++) {
+                    headers.push(getColumnLetter(i));
+                }
+            }
+            
+            // Populate dropdowns
+            populateDropdown(cnpjColumn, headers);
+            populateDropdown(baseCalculoColumn, headers);
+            populateDropdown(valorRetidoColumn, headers);
+            
+            // Try to auto-select based on header names
+            autoSelectColumns();
+        }
+
+        function populateDropdown(dropdown, options) {
+            dropdown.innerHTML = '';
+            
+            options.forEach((option, index) => {
+                const optionElement = document.createElement('option');
+                optionElement.value = index;
+                optionElement.textContent = option;
+                dropdown.appendChild(optionElement);
+            });
+        }
+
+        function autoSelectColumns() {
+            const cnpjKeywords = ['cnpj', 'id', 'identifier', 'code'];
+            const baseCalculoKeywords = ['base', 'calc', 'cálculo', 'calculo', 'valor base'];
+            const valorRetidoKeywords = ['retido', 'retido', 'retida', 'retention'];
+            
+            headers.forEach((header, index) => {
+                const headerLower = String(header).toLowerCase();
+                
+                // Check for CNPJ column
+                if (cnpjKeywords.some(keyword => headerLower.includes(keyword))) {
+                    cnpjColumn.value = index;
+                }
+                
+                // Check for Base de Cálculo column
+                if (baseCalculoKeywords.some(keyword => headerLower.includes(keyword))) {
+                    baseCalculoColumn.value = index;
+                }
+                
+                // Check for Valor Retido column
+                if (valorRetidoKeywords.some(keyword => headerLower.includes(keyword))) {
+                    valorRetidoColumn.value = index;
+                }
+            });
+        }
+
+        function getColumnLetter(index) {
+            let letter = '';
+            let temp = index;
+            
+            while (temp >= 0) {
+                letter = String.fromCharCode(65 + (temp % 26)) + letter;
+                temp = Math.floor(temp / 26) - 1;
+            }
+            
+            return letter;
+        }
+
+        function getColumnIndex(letter) {
+            let column = 0;
+            const length = letter.length;
+            
+            for (let i = 0; i < length; i++) {
+                column += (letter.charCodeAt(i) - 64) * Math.pow(26, length - i - 1);
+            }
+            
+            return column - 1;
+        }
+
+        function showError(message) {
+            uploadStatus.textContent = message;
+            uploadStatus.className = 'status error';
+        }
+
+        function processSpreadsheet() {
+            const cnpjColIndex = parseInt(cnpjColumn.value);
+            const baseColIndex = parseInt(baseCalculoColumn.value);
+            const valorColIndex = parseInt(valorRetidoColumn.value);
+            
+            if (cnpjColIndex === baseColIndex || cnpjColIndex === valorColIndex || baseColIndex === valorColIndex) {
+                showError('Please select different columns for CNPJ, Base de Cálculo, and Valor Retido.');
+                return;
+            }
+            
+            processButton.disabled = true;
+            processButton.innerHTML = '<span class="spinner"></span> Processing...';
+            processStatus.textContent = '';
+            processStatus.className = 'status';
+            
+            // Use setTimeout to avoid UI blocking
+            setTimeout(() => {
+                try {
+                    // Create a copy of the workbook for processing
+                    processedWorkbook = XLSX.utils.book_new();
+                    const ws = workbook.Sheets[selectedSheet];
+                    
+                    // Convert to raw data with formulas
+                    const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+                    
+                    // Get starting data row (skip header row if needed)
+                    const startRow = hasHeaders ? 1 : 0;
+                    
+                    // Group by CNPJ
+                    const groupedByCnpj = {};
+                    
+                    for (let i = startRow; i < rawData.length; i++) {
+                        const row = rawData[i];
+                        const cnpjValue = row[cnpjColIndex];
+                        
+                        if (cnpjValue !== undefined) {
+                            if (!groupedByCnpj[cnpjValue]) {
+                                groupedByCnpj[cnpjValue] = [];
+                            }
+                            
+                            groupedByCnpj[cnpjValue].push({
+                                rowIndex: i,
+                                row: row
+                            });
+                        }
+                    }
+                    
+                    // Process each group and construct the new data
+                    let newData = [];
+                    
+                    // Add header row if needed
+                    if (hasHeaders) {
+                        newData.push(rawData[0]);
+                    }
+                    
+                    // Process each CNPJ group
+                    for (const cnpj in groupedByCnpj) {
+                        const group = groupedByCnpj[cnpj];
+                        
+                        // Add all rows from this group
+                        for (const item of group) {
+                            newData.push(item.row);
+                        }
+                        
+                        // Create the formula row
+                        const formulaRow = new Array(rawData[0].length).fill('');
+                        formulaRow[cnpjColIndex] = cnpj; // Keep the same CNPJ
+                        
+                        // Convert row numbers to Excel format (1-based indexing)
+                        const startExcelRow = startRow + newData.length - group.length + 1;
+                        const endExcelRow = startRow + newData.length;
+                        
+                        // Get column letters for formula construction
+                        const baseColLetter = getColumnLetter(baseColIndex);
+                        const valorColLetter = getColumnLetter(valorColIndex);
+                        
+                        // Create formulas
+                        // Base de Cálculo formula: SUM(range)/2
+                        formulaRow[baseColIndex] = `=SUM(${baseColLetter}${startExcelRow}:${baseColLetter}${endExcelRow})/2`;
+                        
+                        // Valor Retido formula: SUM(range)
+                        formulaRow[valorColIndex] = `=SUM(${valorColLetter}${startExcelRow}:${valorColLetter}${endExcelRow})`;
+                        
+                        // Add formula row
+                        newData.push(formulaRow);
+                        
+                        // Add empty row to separate groups
+                        newData.push(new Array(rawData[0].length).fill(''));
+                    }
+                    
+                    // Convert back to sheet
+                    const newSheet = XLSX.utils.aoa_to_sheet(newData);
+                    
+                    // Copy styles and merges from original sheet (if possible)
+                    // Note: This is a simplified approach and may not preserve all formatting
+                    const properties = ['!cols', '!rows', '!merges', '!autofilter'];
+                    properties.forEach(prop => {
+                        if (ws[prop]) newSheet[prop] = ws[prop];
+                    });
+                    
+                    // Add to the workbook
+                    XLSX.utils.book_append_sheet(processedWorkbook, newSheet, selectedSheet);
+                    
+                    processButton.disabled = false;
+                    processButton.innerHTML = 'Process Spreadsheet';
+                    processStatus.textContent = 'Processing complete! You can now download the processed file.';
+                    processStatus.className = 'status success';
+                    downloadButtons.classList.remove('hidden');
+                } catch (error) {
+                    console.error(error);
+                    processButton.disabled = false;
+                    processButton.innerHTML = 'Process Spreadsheet';
+                    showError('An error occurred while processing. Please try again.');
+                }
+            }, 100);
+        }
+
+        function downloadFile(format) {
+            if (!processedWorkbook) {
+                showError('No processed file to download.');
+                return;
+            }
+            
+            try {
+                const originalFileName = fileInput.files[0].name;
+                const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+                let fileName = `${fileNameWithoutExt}_processed`;
+                
+                switch (format) {
+                    case 'xlsx':
+                        fileName += '.xlsx';
+                        XLSX.writeFile(processedWorkbook, fileName);
+                        break;
+                    case 'ods':
+                        fileName += '.ods';
+                        XLSX.writeFile(processedWorkbook, fileName, { bookType: 'ods' });
+                        break;
+                    case 'csv':
+                        fileName += '.csv';
+                        XLSX.writeFile(processedWorkbook, fileName, { bookType: 'csv' });
+                        break;
+                }
+                
+                processStatus.textContent = `File downloaded as ${fileName}`;
+                processStatus.className = 'status success';
+            } catch (error) {
+                console.error(error);
+                showError('Error downloading file. Please try again.');
+            }
+        }
+    </script>
+</body>
+</html>
